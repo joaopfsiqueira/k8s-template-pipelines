@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "action": {
+        "type": "expire"
+      },
+      "selection": {
+        "countType": "imageCountMoreThan",
+        "countNumber": 10,
+        "tagStatus": "tagged",
+        "tagPrefixList": [
+          "master."
+        ]
+      },
+      "description": "Mantem somente as 10 imagens mais recentes",
+      "rulePriority": 1
+    },
+    {
+      "action": {
+        "type": "expire"
+      },
+      "selection": {
+        "countType": "imageCountMoreThan",
+        "countNumber": 2,
+        "tagStatus": "tagged",
+        "tagPrefixList": [
+          "stage."
+        ]
+      },
+      "description": "Mantem somente as 2 imagens mais recentes",
+      "rulePriority": 2
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: $K8S_NAMESPACE
+  name: $BITBUCKET_REPO_SLUG
+spec:
+  selector:
+    app: $BITBUCKET_REPO_SLUG
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 8000
+    name: app

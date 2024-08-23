@@ -1,0 +1,81 @@
+image: alpine:3.19
+
+definitions:
+  # services:
+  #   docker:
+  #     memory: 1024
+
+  steps:
+    - step: &createAndConfigureRepositoryInECR
+        name: Create and configure repository in ECR
+        image: amazon/aws-cli:2.13.9
+        script:
+          - DATA=$(aws ecr describe-repositories --repository-name ${BITBUCKET_REPO_SLUG} || true)
+          - |
+            if [[ "$DATA" == *"${BITBUCKET_REPO_SLUG}"* ]]; then
+              echo "=> ${BITBUCKET_REPO_SLUG} repository already exists!"
+              exit 0
+            fi
+
+          - aws ecr create-repository --repository-name "${BITBUCKET_REPO_SLUG}"
+          - |
+            aws ecr set-repository-policy \
+                  --repository-name ${BITBUCKET_REPO_SLUG} \
+                  --policy-text file://manifest/aws/ecr/repository-policy.json
+          - |
+            aws ecr put-lifecycle-policy \
+                  --repository-name ${BITBUCKET_REPO_SLUG} \
+                  --lifecycle-policy-text file://manifest/aws/ecr/lifecycle-policy.json
+
+    - step: &buildAndPush
+        name: "Build and Push Docker Image to ECR"
+        # size: 2x
+        caches:
+          - docker
+        services:
+          - docker
+        script:
+          - export IMAGE_NAME=${BITBUCKET_REPO_SLUG}
+          - export TAG_ID=${BITBUCKET_BRANCH}.${BITBUCKET_COMMIT}
+          - export TAG_LATEST=${BITBUCKET_BRANCH}.latest
+
+          - docker build -t $IMAGE_NAME:$TAG_ID -t $IMAGE_NAME:$TAG_LATEST .
+
+          - pipe: atlassian/aws-ecr-push-image:2.3.0
+            variables:
+              IMAGE_NAME: $IMAGE_NAME
+              TAGS: "${TAG_ID} ${TAG_LATEST}"
+
+    - step: &deployApp
+        name: "Deploy app on EKS"
+        script:
+          - apk add --no-cache gettext
+          - |
+            for file in $(find ./manifest/k8s -name "*.yaml" -o -name "*.yml" | sort); do
+              envsubst < "$file" > "${file%.*}.processed.yaml"
+              rm -f $file
+            done
+          - pipe: atlassian/aws-eks-kubectl-run:2.3.0
+            variables:
+              CLUSTER_NAME: "pontaltech-eks-${BITBUCKET_DEPLOYMENT_ENVIRONMENT}"
+              KUBECTL_COMMAND: "apply"
+              RESOURCE_PATH: "./manifest/k8s/"
+              DEBUG: "false"
+
+pipelines:
+  custom:
+    create-ecr-repository:
+      - step: *createAndConfigureRepositoryInECR
+        trigger: manual
+
+  branches:
+    '{main,master}':
+      - step: *buildAndPush
+      - step:
+          <<: *deployApp
+          deployment: Production
+    stage:
+      - step: *buildAndPush
+      - step:
+          <<: *deployApp
+          deployment: Staging
